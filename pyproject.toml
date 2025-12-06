@@ -1,0 +1,58 @@
+[tool.poetry]
+name = "fintual-portfolio-showcase"
+version = "1.0.0"
+description = "Sistema avanzado de rebalanceo de portafolios - Showcase técnico para Fintual"
+authors = ["Gonzalo Díaz <godiazc@udd.cl>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.104.0"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.5.0"
+python-dotenv = "^1.0.0"
+yfinance = "^0.2.32"
+pandas = "^2.1.4"
+numpy = "^1.26.0"
+scipy = "^1.11.0"
+cvxpy = "^1.4.0"
+numba = "^0.58.0"
+redis = "^5.0.0"
+requests = "^2.31.0"
+python-multipart = "^0.0.6"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-cov = "^4.1.0"
+pytest-asyncio = "^0.21.0"
+pytest-benchmark = "^4.0.0"
+httpx = "^0.25.0"
+black = "^23.12.0"
+ruff = "^0.1.8"
+mypy = "^1.7.0"
+pre-commit = "^3.5.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+addopts = "-v"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
