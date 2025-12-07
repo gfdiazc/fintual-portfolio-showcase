@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from app.core.rebalancer import (
     SimpleRebalanceStrategy,
+    CVaRRebalanceStrategy,
     Trade,
     RebalanceResult,
     RebalanceStrategy
@@ -518,3 +519,78 @@ class TestEdgeCases:
             assert aapl_trades[0].action == "SELL"
         if meta_trades:
             assert meta_trades[0].action == "BUY"
+
+
+class TestCVaRRebalanceStrategy:
+    """Tests para CVaRRebalanceStrategy."""
+
+    def test_cvar_strategy_initialization(self):
+        """Test que la estrategia se inicializa correctamente."""
+        strategy = CVaRRebalanceStrategy(
+            constraints=TradingConstraints(),
+            n_scenarios=500,
+            confidence_level=0.9
+        )
+        assert strategy.n_scenarios == 500
+        assert strategy.confidence_level == 0.9
+        assert isinstance(strategy.constraints, TradingConstraints)
+
+    def test_cvar_strategy_basic_rebalance(self, sample_portfolio_balanced):
+        """Test de un rebalanceo básico con la estrategia CVaR."""
+        strategy = CVaRRebalanceStrategy(n_scenarios=100) # Menos escenarios para el test
+        result = strategy.rebalance(sample_portfolio_balanced)
+
+        assert result is not None
+        assert isinstance(result, RebalanceResult)
+        assert "optimal_weights" in result.metrics
+        # El rebalanceo debería generar al menos un trade dado el drift
+        assert len(result.trades) > 0
+
+    def test_cvar_respects_min_liquidity_constraints(self, sample_asset_aapl):
+        """Test que la optimización CVaR respeta el mínimo de liquidez."""
+        # Forzar una restricción de liquidez muy alta
+        constraints = TradingConstraints(min_liquidity=Decimal("0.8")) # 80% cash
+        strategy = CVaRRebalanceStrategy(constraints=constraints, n_scenarios=100)
+
+        portfolio = Portfolio(id="test_cvar_liq", cash=Decimal("1000.00"))
+        portfolio.add_position(
+            asset=sample_asset_aapl,
+            shares=Decimal("5"), # ~902
+            target_allocation=Decimal("1.0"),
+            deposited=Decimal("900.00")
+        )
+
+        result = strategy.rebalance(portfolio)
+        
+        # El total de la cartera es ~1902. 80% de cash es ~1521.
+        # Como solo hay 1000 de cash, no debería poder comprar.
+        buy_trades = [t for t in result.trades if t.action == "BUY"]
+        assert len(buy_trades) == 0
+
+    def test_cvar_rebalance_generates_trades(self, sample_asset_aapl, sample_asset_meta):
+        """Test que genera trades para un portfolio desbalanceado."""
+        portfolio = Portfolio(id="unbalanced", cash=Decimal("100.00"))
+        portfolio.add_position(
+            asset=sample_asset_aapl,
+            shares=Decimal("5"),  # ~902.5
+            target_allocation=Decimal("0.8"), # Target 80%
+            deposited=Decimal("900.00")
+        )
+        portfolio.add_position(
+            asset=sample_asset_meta,
+            shares=Decimal("10"), # ~4000
+            target_allocation=Decimal("0.2"), # Target 20%
+            deposited=Decimal("4000.00")
+        )
+        # Current state: META is heavily overweight.
+
+        strategy = CVaRRebalanceStrategy(n_scenarios=100)
+        result = strategy.rebalance(portfolio)
+
+        assert len(result.trades) > 0
+        # Debería vender el activo sobreponderado (META) y comprar el subponderado (AAPL)
+        sell_trades = [t for t in result.trades if t.action == "SELL"]
+        buy_trades = [t for t in result.trades if t.action == "BUY"]
+        
+        assert any(t.ticker == "META" for t in sell_trades)
+        assert any(t.ticker == "AAPL" for t in buy_trades)

@@ -165,6 +165,21 @@ class Portfolio(BaseModel):
 
         return position.market_value / self.total_value
 
+    def get_current_allocations(self) -> Dict[str, Decimal]:
+        """
+        Calcula la asignación actual de todos los tickers en el portafolio.
+
+        Returns:
+            Un diccionario con ticker -> asignación actual (Decimal).
+        """
+        allocations = {}
+        if self.total_value == 0:
+            return {ticker: Decimal(0) for ticker in self.positions}
+
+        for ticker in self.positions.keys():
+            allocations[ticker] = self.get_current_allocation(ticker)
+        return allocations
+
     def add_position(
         self,
         asset: Asset,
@@ -212,6 +227,25 @@ class Portfolio(BaseModel):
             target = position.target_allocation
             drifts[ticker] = target - current
         return drifts
+
+    def get_current_allocations_as_array(self) -> 'np.ndarray':
+        """
+        Returns current portfolio allocations as a NumPy array.
+        The order of the array is consistent with self.positions.keys().
+        """
+        import numpy as np
+        allocations = [self.get_current_allocation(ticker) for ticker in self.positions.keys()]
+        return np.array([float(a) for a in allocations])
+
+    def get_target_allocations_as_array(self) -> 'np.ndarray':
+        """
+        Returns target portfolio allocations as a NumPy array.
+        The order of the array is consistent with self.positions.keys().
+        """
+        import numpy as np
+        allocations = [p.target_allocation for p in self.positions.values()]
+        return np.array([float(a) for a in allocations])
+
 
     class Config:
         json_schema_extra = {

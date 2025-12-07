@@ -17,8 +17,13 @@ from decimal import Decimal
 from typing import Dict, List, Tuple
 from dataclasses import dataclass
 
+import numpy as np
+from scipy.optimize import minimize
+
 from app.core.models import Portfolio, Asset
 from app.core.constraints import TradingConstraints
+from app.core.metrics import CVaRCalculator, MonteCarloSimulator
+
 
 
 @dataclass
@@ -183,6 +188,61 @@ class RebalanceStrategy(ABC):
         cost_rate = self.constraints.transaction_cost_bps / Decimal("10000")
         return total_value * cost_rate
 
+    def _estimate_final_allocations(
+        self,
+        portfolio: Portfolio,
+        trades: List[Trade]
+    ) -> Dict[str, Decimal]:
+        """
+        Estima allocations finales después de ejecutar trades.
+
+        Args:
+            portfolio: Portfolio actual
+            trades: Lista de trades a ejecutar
+
+        Returns:
+            Dict {ticker: final_allocation}
+        """
+        # Crear copia de las posiciones actuales
+        final_positions = {
+            ticker: pos.shares
+            for ticker, pos in portfolio.positions.items()
+        }
+
+        # Aplicar trades
+        for trade in trades:
+            if trade.action == "BUY":
+                if trade.ticker in final_positions:
+                    final_positions[trade.ticker] += trade.shares
+                else:
+                    final_positions[trade.ticker] = trade.shares
+            else:  # SELL
+                if trade.ticker in final_positions:
+                    final_positions[trade.ticker] -= trade.shares
+                    if final_positions[trade.ticker] <= 0:
+                        del final_positions[trade.ticker]
+
+        # Calcular cash final después de trades
+        total_buy = sum(t.value for t in trades if t.action == "BUY")
+        total_sell = sum(t.value for t in trades if t.action == "SELL")
+        transaction_cost = self._calculate_transaction_cost(trades)
+        final_cash = portfolio.cash + total_sell - total_buy - transaction_cost
+
+        # Calcular total value final
+        total_value_final = final_cash
+        for ticker, shares in final_positions.items():
+            price = portfolio.positions[ticker].asset.current_price
+            total_value_final += shares * price
+
+        # Calcular allocations (solo para posiciones, no incluir cash en allocations)
+        final_allocations = {}
+        for ticker, shares in final_positions.items():
+            price = portfolio.positions[ticker].asset.current_price
+            value = shares * price
+            final_allocations[ticker] = value / total_value_final if total_value_final > 0 else Decimal("0")
+
+        return final_allocations
+
 
 class SimpleRebalanceStrategy(RebalanceStrategy):
     """
@@ -332,57 +392,222 @@ class SimpleRebalanceStrategy(RebalanceStrategy):
             }
         )
 
-    def _estimate_final_allocations(
+
+
+class CVaRRebalanceStrategy(RebalanceStrategy):
+    """
+    CVaR-optimized rebalancing strategy.
+
+    Algoritmo:
+    1. Estimar expected returns y cov_matrix (sintéticos para showcase)
+    2. Simular N escenarios de retornos del portfolio (Monte Carlo)
+    3. Optimizar weights que minimizan CVaR
+    4. Generar trades para alcanzar optimal weights
+    5. Aplicar constraints
+    """
+
+    def __init__(
+        self,
+        constraints: TradingConstraints = None,
+        n_scenarios: int = 1000,
+        confidence_level: float = 0.95
+    ):
+        super().__init__(constraints)
+        self.n_scenarios = n_scenarios
+        self.confidence_level = confidence_level
+        self.cvar_calculator = CVaRCalculator(confidence_level=self.confidence_level)
+        self.simulator = MonteCarloSimulator(n_scenarios=self.n_scenarios)
+
+    def rebalance(self, portfolio: Portfolio) -> RebalanceResult:
+        """
+        Rebalances the portfolio using CVaR optimization.
+        """
+        # 1. Estimar parámetros
+        expected_returns, cov_matrix = self._estimate_parameters(portfolio)
+
+        # 2. Optimizar CVaR
+        optimal_weights = self._optimize_cvar(portfolio, expected_returns, cov_matrix)
+
+        # 3. Generar trades
+        trades = self._generate_trades(portfolio, optimal_weights)
+
+        # 4. Aplicar constraints
+        constrained_trades = self._apply_constraints(trades, portfolio)
+        
+        # 5. Calcular totales y costos
+        total_buy = sum(t.value for t in constrained_trades if t.action == "BUY")
+        total_sell = sum(t.value for t in constrained_trades if t.action == "SELL")
+        estimated_cost = self._calculate_transaction_cost(constrained_trades)
+
+        # 6. Verificar min_liquidity constraint
+        final_cash = portfolio.cash + total_sell - total_buy - estimated_cost
+        min_cash_required = self.constraints.min_liquidity * portfolio.total_value
+
+        if final_cash < min_cash_required:
+            cash_deficit = min_cash_required - final_cash
+            if total_buy > 0:
+                reduction_factor = max(Decimal("0"), (total_buy - cash_deficit) / total_buy)
+                adjusted_trades = []
+                for t in constrained_trades:
+                    if t.action == "BUY":
+                        adjusted_shares = t.shares * reduction_factor
+                        if not self.constraints.allow_fractional_shares:
+                            adjusted_shares = Decimal(int(adjusted_shares))
+                        adjusted_trades.append(Trade(
+                            ticker=t.ticker,
+                            action=t.action,
+                            shares=adjusted_shares,
+                            current_price=t.current_price,
+                            value=adjusted_shares * t.current_price,
+                            reason=f"{t.reason} (adjusted for liquidity)"
+                        ))
+                    else:
+                        adjusted_trades.append(t)
+                constrained_trades = [
+                    t for t in adjusted_trades if t.value >= self.constraints.min_trade_value
+                ]
+                
+                # Recalcular totales
+                total_buy = sum(t.value for t in constrained_trades if t.action == "BUY")
+                total_sell = sum(t.value for t in constrained_trades if t.action == "SELL")
+                estimated_cost = self._calculate_transaction_cost(constrained_trades)
+
+        # 7. Calcular allocations finales (estimadas)
+        final_allocations = self._estimate_final_allocations(portfolio, constrained_trades)
+        
+        return RebalanceResult(
+            trades=constrained_trades,
+            total_buy_value=total_buy,
+            total_sell_value=total_sell,
+            estimated_cost=estimated_cost,
+            final_allocations=final_allocations,
+            metrics={
+                "n_trades": len(constrained_trades),
+                "turnover_pct": float(sum(t.value for t in constrained_trades) / portfolio.total_value * 100),
+                "optimal_weights": {list(portfolio.positions.keys())[i]: w for i, w in enumerate(optimal_weights)},
+            }
+        )
+
+
+    def _estimate_parameters(self, portfolio: Portfolio) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Generates synthetic expected returns and covariance matrix for showcase.
+        """
+        n_assets = len(portfolio.positions)
+
+        # Expected returns: 8-12% anual es razonable para stocks
+        expected_returns = np.array([0.08 + 0.02*i for i in range(n_assets)])
+
+        # Cov matrix: vol ~15%, correlación ~0.3
+        vol = 0.15
+        corr = 0.3
+        cov_matrix = np.full((n_assets, n_assets), vol**2 * corr)
+        np.fill_diagonal(cov_matrix, vol**2)
+
+        return expected_returns, cov_matrix
+
+    def _optimize_cvar(
         self,
         portfolio: Portfolio,
-        trades: List[Trade]
-    ) -> Dict[str, Decimal]:
+        expected_returns: np.ndarray,
+        cov_matrix: np.ndarray
+    ) -> np.ndarray:
         """
-        Estima allocations finales después de ejecutar trades.
-
-        Args:
-            portfolio: Portfolio actual
-            trades: Lista de trades a ejecutar
-
-        Returns:
-            Dict {ticker: final_allocation}
+        Optimizes portfolio weights to minimize CVaR.
         """
-        # Crear copia de las posiciones actuales
-        final_positions = {
-            ticker: pos.shares
-            for ticker, pos in portfolio.positions.items()
-        }
+        n_assets = len(portfolio.positions)
+        current_weights = portfolio.get_current_allocations_as_array()
+        target_weights = portfolio.get_target_allocations_as_array()
 
-        # Aplicar trades
-        for trade in trades:
-            if trade.action == "BUY":
-                if trade.ticker in final_positions:
-                    final_positions[trade.ticker] += trade.shares
-                else:
-                    final_positions[trade.ticker] = trade.shares
-            else:  # SELL
-                if trade.ticker in final_positions:
-                    final_positions[trade.ticker] -= trade.shares
-                    if final_positions[trade.ticker] <= 0:
-                        del final_positions[trade.ticker]
+        def objective(weights: np.ndarray) -> float:
+            # Asegurar que los pesos sumen 1
+            weights = weights / np.sum(weights)
+            
+            # Simular retornos del portfolio
+            simulated_returns = self.simulator.simulate_portfolio_returns(
+                weights, expected_returns, cov_matrix, n_periods=252
+            )
+            
+            # Calcular CVaR
+            cvar = self.cvar_calculator.calculate_cvar(simulated_returns)
+            
+            # Penalizar la desviación del target (suavemente)
+            risk_aversion = 0.1
+            tracking_error = np.sum(np.abs(weights - target_weights))
+            
+            return cvar + risk_aversion * tracking_error
 
-        # Calcular cash final después de trades
-        total_buy = sum(t.value for t in trades if t.action == "BUY")
-        total_sell = sum(t.value for t in trades if t.action == "SELL")
-        transaction_cost = self._calculate_transaction_cost(trades)
-        final_cash = portfolio.cash + total_sell - total_buy - transaction_cost
+        # Constraints para el optimizador
+        constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
+        bounds = tuple((0, 1) for _ in range(n_assets))
 
-        # Calcular total value final
-        total_value_final = final_cash
-        for ticker, shares in final_positions.items():
-            price = portfolio.positions[ticker].asset.current_price
-            total_value_final += shares * price
+        # Optimización
+        result = minimize(
+            objective,
+            x0=current_weights,
+            method='SLSQP',
+            bounds=bounds,
+            constraints=constraints
+        )
 
-        # Calcular allocations (solo para posiciones, no incluir cash en allocations)
-        final_allocations = {}
-        for ticker, shares in final_positions.items():
-            price = portfolio.positions[ticker].asset.current_price
-            value = shares * price
-            final_allocations[ticker] = value / total_value_final if total_value_final > 0 else Decimal("0")
+        if not result.success:
+            # Si la optimización falla, devolver los pesos target como fallback
+            return target_weights
+            
+        return result.x
 
-        return final_allocations
+    def _generate_trades(
+        self,
+        portfolio: Portfolio,
+        optimal_weights: np.ndarray
+    ) -> List[Trade]:
+        """
+        Generates trades to move from current to optimal allocations.
+        """
+        trades: List[Trade] = []
+        total_value = portfolio.total_value
+        
+        current_allocations = portfolio.get_current_allocations()
+        asset_tickers = list(portfolio.positions.keys())
+
+        for i, ticker in enumerate(asset_tickers):
+            current_weight = current_allocations.get(ticker, Decimal('0'))
+            optimal_weight = Decimal(str(optimal_weights[i]))
+            
+            drift = optimal_weight - current_weight
+            
+            if abs(drift) < self.constraints.rebalance_threshold:
+                continue
+
+            value_to_trade = drift * total_value
+            position = portfolio.positions.get(ticker)
+            
+            if position is None and drift > 0:
+                 # No se puede comprar un activo que no está en el portfolio
+                 # Esto es una simplificación para el showcase
+                continue
+
+            shares_to_trade = abs(value_to_trade / position.asset.current_price)
+
+            if not self.constraints.allow_fractional_shares:
+                shares_to_trade = Decimal(int(shares_to_trade))
+            
+            if shares_to_trade == 0:
+                continue
+            
+            action = "BUY" if drift > 0 else "SELL"
+            reason = f"CVaR opt: target {float(optimal_weight)*100:.2f}%, current {float(current_weight)*100:.2f}%"
+
+            trades.append(Trade(
+                ticker=ticker,
+                action=action,
+                shares=shares_to_trade,
+                current_price=position.asset.current_price,
+                value=abs(value_to_trade),
+                reason=reason
+            ))
+            
+        return trades
+
+
+

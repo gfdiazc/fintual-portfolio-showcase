@@ -134,12 +134,8 @@ async def rebalance_goal(
     if request.strategy == RebalanceStrategyEnum.SIMPLE:
         strategy = SimpleRebalanceStrategy(constraints=constraints)
     elif request.strategy == RebalanceStrategyEnum.CVAR:
-        # TODO: Implementar con Gemini
-        raise HTTPException(
-            status_code=501,
-            detail="CVaR strategy not yet implemented. Use 'simple' for now. "
-                   "CVaR optimization coming soon with Gemini!"
-        )
+        from app.core.rebalancer import CVaRRebalanceStrategy
+        strategy = CVaRRebalanceStrategy(constraints=constraints)
     elif request.strategy == RebalanceStrategyEnum.TAX_EFFICIENT:
         # TODO: Bonus feature
         raise HTTPException(
