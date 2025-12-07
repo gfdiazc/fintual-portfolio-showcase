@@ -1,57 +1,80 @@
-.PHONY: install test lint run clean coverage benchmark
+.PHONY: help install test lint format clean run benchmark
 
-install:
+help:  ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+install:  ## Install dependencies
 	pip install -r requirements.txt
+	pip install black ruff mypy pytest pytest-cov pre-commit
 
-install-dev:
+install-dev:  ## Install dev dependencies with pre-commit hooks
 	pip install -r requirements.txt
-	pip install -r requirements-dev.txt
+	pip install black ruff mypy pytest pytest-cov pre-commit
+	pre-commit install
 
-test:
+test:  ## Run all tests
 	pytest tests/ -v
 
-test-unit:
+test-unit:  ## Run unit tests only
 	pytest tests/unit/ -v
 
-test-integration:
-	pytest tests/integration/ -v
+test-cov:  ## Run tests with coverage report
+	pytest tests/unit/ -v --cov=app --cov-report=html --cov-report=term-missing
 
-coverage:
-	pytest --cov=app --cov-report=html --cov-report=term-missing
+test-watch:  ## Run tests in watch mode (requires pytest-watch)
+	pytest-watch tests/unit/ -v
 
-lint:
-	black app/ tests/ --check
+lint:  ## Run all linters
+	black --check app/ tests/
 	ruff check app/ tests/
+	mypy app/ --ignore-missing-imports
 
-format:
-	black app/ tests/
-	ruff check app/ tests/ --fix
+format:  ## Format code with black and ruff
+	black app/ tests/ scripts/
+	ruff check --fix app/ tests/ scripts/
 
-typecheck:
-	mypy app/
-
-run:
-	uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-benchmark:
-	pytest tests/performance/ --benchmark-only -v
-
-clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+clean:  ## Clean build artifacts and cache
+	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name ".coverage" -delete
+	find . -type f -name "*.pyo" -delete
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -rf .pytest_cache .coverage htmlcov/ .mypy_cache .ruff_cache dist/ build/
 
-help:
-	@echo "Available commands:"
-	@echo "  make install      - Install production dependencies"
-	@echo "  make install-dev  - Install development dependencies"
-	@echo "  make test         - Run all tests"
-	@echo "  make coverage     - Run tests with coverage report"
-	@echo "  make lint         - Check code quality"
-	@echo "  make format       - Format code"
-	@echo "  make typecheck    - Run type checking"
-	@echo "  make run          - Run development server"
-	@echo "  make benchmark    - Run performance benchmarks"
-	@echo "  make clean        - Clean temporary files"
+run:  ## Run FastAPI server
+	uvicorn app.main:app --reload --port 8000
+
+run-prod:  ## Run FastAPI server in production mode
+	uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
+
+benchmark:  ## Run benchmark comparing strategies
+	python scripts/benchmark_strategies.py
+
+benchmark-save:  ## Run benchmark and save results
+	python scripts/benchmark_strategies.py | tee docs/benchmarks/latest_run.txt
+
+docker-build:  ## Build Docker image
+	docker build -t fintual-portfolio-showcase .
+
+docker-run:  ## Run Docker container
+	docker run -p 8000:8000 fintual-portfolio-showcase
+
+docker-test:  ## Run tests in Docker
+	docker run --rm fintual-portfolio-showcase pytest tests/unit/ -v
+
+ci-check:  ## Run all CI checks locally
+	@echo "Running tests..."
+	pytest tests/unit/ -v --cov=app --cov-report=term-missing
+	@echo "\nChecking code formatting..."
+	black --check app/ tests/
+	@echo "\nLinting..."
+	ruff check app/ tests/
+	@echo "\nType checking..."
+	mypy app/ --ignore-missing-imports
+	@echo "\n✅ All CI checks passed!"
+
+coverage-report:  ## Generate and open HTML coverage report
+	pytest tests/unit/ --cov=app --cov-report=html
+	open htmlcov/index.html
+
+setup: install-dev  ## Complete setup (install + hooks)
+	@echo "✅ Setup complete! Run 'make help' to see available commands."
