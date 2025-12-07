@@ -1,0 +1,199 @@
+.rebalance-view {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.rebalance-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.rebalance-header h2 {
+  margin: 0;
+}
+
+.portfolio-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--fintual-light-gray);
+}
+
+.metric-row:last-child {
+  border-bottom: none;
+}
+
+.positions-table {
+  overflow-x: auto;
+}
+
+.positions-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.positions-table th,
+.positions-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fintual-light-gray);
+}
+
+.positions-table th {
+  font-weight: 600;
+  color: var(--fintual-gray);
+  text-transform: uppercase;
+  font-size: 0.875rem;
+}
+
+.positions-table tbody tr:hover {
+  background-color: var(--fintual-light-gray);
+}
+
+.rebalance-controls {
+  display: grid;
+  gap: 1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rebalance-result {
+  background: linear-gradient(135deg, #F0FDF4 0%, #DBEAFE 100%);
+  border: 2px solid var(--fintual-blue);
+}
+
+.result-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+}
+
+.summary-item {
+  text-align: center;
+}
+
+.summary-item label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--fintual-gray);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.summary-item strong {
+  font-size: 1.25rem;
+}
+
+.trades-list {
+  margin-bottom: 1.5rem;
+}
+
+.trades-list h4 {
+  margin-bottom: 1rem;
+}
+
+.trades-list table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.trades-list th,
+.trades-list td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--fintual-light-gray);
+}
+
+.trades-list th {
+  background-color: var(--fintual-light-gray);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.875rem;
+}
+
+.metrics-display {
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+}
+
+.metrics-display h4 {
+  margin-bottom: 1rem;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.metric-item {
+  text-align: center;
+  padding: 0.75rem;
+  background: var(--fintual-light-gray);
+  border-radius: 8px;
+}
+
+.metric-item label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--fintual-gray);
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.metric-item span {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--fintual-dark);
+}
+
+.error-message {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: #FEE2E2;
+  border: 2px solid var(--error-red);
+  border-radius: 8px;
+  color: var(--error-red);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .result-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .positions-table,
+  .trades-list table {
+    font-size: 0.875rem;
+  }
+
+  .positions-table th,
+  .positions-table td,
+  .trades-list th,
+  .trades-list td {
+    padding: 0.5rem;
+  }
+}
