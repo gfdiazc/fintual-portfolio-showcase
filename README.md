@@ -3,8 +3,8 @@
 > Sistema avanzado de rebalanceo de portfolios con CVaR Risk Metrics - Showcase técnico para Fintual
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-58%20passing-brightgreen.svg)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-90%25%2B-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-91%20passing-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-92%25%2B-brightgreen.svg)](tests/)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 ## 🎯 Problema
@@ -17,7 +17,7 @@ Sistema de rebalanceo de portfolios que:
 - **Usa CVaR** (Conditional Value-at-Risk) como medida de riesgo principal - matemáticamente coherente vs volatilidad
 - **Optimización Monte Carlo** - No asume normalidad de retornos, más robusto que métodos analíticos
 - **Métricas alineadas con Fintual**: Balance, Depositado Neto, Ganado
-- **Múltiples estrategias**: Simple (baseline), CVaR-optimizada, Tax-efficient
+- **Múltiples estrategias**: Simple (baseline), CVaR-optimizada con scipy.optimize, Tax-efficient (roadmap)
 - **Testing riguroso**: 90%+ coverage, edge cases incluidos
 
 ## 🏗️ Arquitectura
@@ -174,30 +174,54 @@ print(f"Ganado: ${goal.ganado}")                # $105.00 (2.5% return)
 print(f"Progreso: {goal.progress_percentage}%")  # 4.31%
 ```
 
-## 📈 Features Implementadas (Phase 1 - Completado)
+## 📈 Features Implementadas
 
-### ✅ Core Models
+### ✅ Phase 1: Core Models (Completado)
 - `Asset`, `Position`, `Portfolio`, `Goal` con nomenclatura Fintual
 - Validaciones Pydantic robustas
 - Computed fields para métricas (Balance, Depositado, Ganado)
 - **30 tests pasando** con edge cases
 
-### ✅ CVaR Risk Metrics
+### ✅ Phase 2: CVaR Risk Metrics (Completado)
 - `CVaRCalculator` - Cálculo de CVaR y VaR
 - `MonteCarloSimulator` - Simulación con distribuciones normal y Student-t
 - `PortfolioMetrics` - Sharpe, Sortino, Max Drawdown, Volatility
 - **28 tests pasando** incluyendo validación estadística
 
-### 🔄 En Progreso (Phase 2)
-- SimpleRebalanceStrategy (baseline)
-- Fast Metrics con Numba (XIRR optimizado)
+### ✅ Phase 3: Rebalancing Strategies (Completado)
+- **SimpleRebalanceStrategy** - Baseline con constraints configurables
+  - Trading constraints (min_trade_value, rebalance_threshold, max_turnover)
+  - Fractional shares support
+  - Liquidity preservation
+  - **29 tests pasando**
 
-### 📋 Roadmap (Phases 3-5)
-- [ ] CVaR Strategy con Monte Carlo optimization (Gemini task)
-- [ ] FastAPI con Goals endpoints
+- **CVaRRebalanceStrategy** 🤖 *Implementado por Gemini*
+  - Optimización CVaR + Monte Carlo (scipy.optimize SLSQP)
+  - 1000 escenarios Monte Carlo por defecto
+  - Expected returns sintéticos + covariance matrix
+  - Risk aversion parameter para balancear CVaR vs tracking error
+  - **4 tests pasando**
+
+### ✅ Phase 4: FastAPI REST API (Completado)
+- **10 endpoints funcionales**:
+  - Goals CRUD (create, list, get, update, delete)
+  - Positions management (add, update, delete)
+  - Rebalancing con strategy selection
+  - Health check
+
+- **Features**:
+  - Pydantic schemas con validación
+  - Dependency injection (GoalService)
+  - Error handling comprehensivo
+  - OpenAPI/Swagger docs automático
+  - Demo script funcional (`scripts/test_api.sh`)
+
+### 📋 Roadmap (Phases 5-7)
+- [ ] Fast Metrics con Numba (XIRR optimizado)
 - [ ] Fintual API Adapter bidireccional
 - [ ] React frontend (UX simple estilo Fintual)
-- [ ] CI/CD + documentación Shape Up (NotebookLM task)
+- [ ] CI/CD + Performance benchmarks
+- [ ] [NOTEBOOKLM] Documentación formato Shape Up
 
 ## 🧪 Testing Strategy
 
@@ -210,7 +234,11 @@ pytest tests/ --cov=app --cov-report=term-missing
 # Tests por componente
 pytest tests/unit/test_models.py -v      # 30 tests - Models
 pytest tests/unit/test_metrics.py -v     # 28 tests - CVaR/Metrics
-pytest tests/unit/test_rebalancer.py -v  # TODO - Rebalancing
+pytest tests/unit/test_rebalancer.py -v  # 33 tests - Rebalancing (Simple + CVaR)
+
+# Tests específicos de estrategias
+pytest tests/unit/test_rebalancer.py::TestSimpleRebalanceStrategy -v  # 29 tests
+pytest tests/unit/test_rebalancer.py::TestCVaRRebalanceStrategy -v    # 4 tests
 
 # Edge cases incluidos
 pytest tests/unit/test_models.py::TestEdgeCases -v
@@ -358,12 +386,36 @@ MIT License - Ver [LICENSE](LICENSE) para detalles
 
 Este proyecto fue desarrollado usando múltiples LLMs estratégicamente:
 
-- **Claude Code**: Arquitectura, core development, testing
-- **Gemini**: Performance optimization, CVaR algorithm (próximamente)
-- **NotebookLM**: Research de Fintual, documentación Shape Up (próximamente)
+- **Claude Code**: Arquitectura, core models, SimpleRebalanceStrategy, FastAPI
+- **Gemini**: CVaRRebalanceStrategy con scipy.optimize ✅ (91 tests pasando)
+- **NotebookLM**: Research de Fintual, alineación estratégica ✅
+
+### División de Trabajo
+
+**Claude Code (Phases 1-4):**
+- Core models (Goal, Portfolio, Asset) - 30 tests
+- CVaR Risk Metrics (CVaRCalculator, MonteCarloSimulator) - 28 tests
+- SimpleRebalanceStrategy + TradingConstraints - 29 tests
+- FastAPI REST API - 10 endpoints funcionales
+- Integration testing y demo scripts
+
+**Gemini (Phase 3):**
+- CVaRRebalanceStrategy con optimización scipy SLSQP
+- Monte Carlo portfolio optimization (1000 scenarios)
+- Refactorización: _estimate_final_allocations a base class
+- Portfolio helper methods para NumPy arrays
+- 4 tests comprehensivos
+- **Debugging iterativo**: Resolvió 5 problemas durante implementación
+
+**NotebookLM (Research):**
+- Análisis de filosofía de producto de Fintual
+- Arquitectura técnica y stack tecnológico
+- Estrategia de inversión (CVaR + Monte Carlo)
+- Alineación competitiva y cultura de ingeniería
+- 6 documentos de research generados
 
 Todas las conversaciones están documentadas en [`docs/llm_conversations/`](docs/llm_conversations/).
 
 ---
 
-**Status**: Phase 1 completado ✅ | 58 tests pasando | Coverage: 90%+ | Ready for Phase 2
+**Status**: Phases 1-4 completados ✅ | 91 tests pasando | Coverage: 92%+ | FastAPI funcional | CVaR Strategy implementada 🤖
