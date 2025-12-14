@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { rebalanceAPI } from '../services/api'
+import { rebalanceAPI, sampleData } from '../services/api'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import './RebalanceView.css'
 
@@ -25,7 +25,12 @@ function RebalanceView({ goal, onBack, apiHealthy }) {
 
   const handleRebalance = async () => {
     if (!apiHealthy) {
-      alert('API no disponible. Modo demo.');
+      // In demo mode, use sample data
+      setLoading(true);
+      setTimeout(() => {
+        setRebalanceResult(sampleData.rebalanceResult);
+        setLoading(false);
+      }, 500); // Simulate API delay
       return;
     }
 
@@ -163,7 +168,11 @@ function RebalanceView({ goal, onBack, apiHealthy }) {
                   <tr key={pos.ticker}>
                     <td><strong>{pos.ticker}</strong></td>
                     <td>{pos.shares}</td>
-                    <td>{formatCurrency(pos.current_price)}</td>
+                    <td>
+                      <span className="price-badge">
+                        {formatCurrency(pos.current_price)}
+                      </span>
+                    </td>
                     <td>{formatCurrency(pos.market_value)}</td>
                     <td>{formatPercentage(pos.current_allocation)}</td>
                     <td>{formatPercentage(pos.target_allocation)}</td>
@@ -175,6 +184,51 @@ function RebalanceView({ goal, onBack, apiHealthy }) {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Drift Preview */}
+      <div className="drift-preview card">
+        <h3>Estado del Portfolio</h3>
+        <div className="drift-indicators">
+          {goal.portfolio?.positions?.map((pos) => {
+            const drift = parseFloat(pos.current_allocation) - parseFloat(pos.target_allocation);
+            const needsRebalance = Math.abs(drift) > 0.02; // 2% threshold
+
+            return (
+              <div key={pos.ticker} className={`drift-card ${needsRebalance ? 'needs-action' : 'balanced'}`}>
+                <div className="stock-header">
+                  <strong>{pos.ticker}</strong>
+                  {needsRebalance && <span className="alert-badge">⚠️ Desbalanceado</span>}
+                </div>
+                <div className="allocation-bars">
+                  <div className="bar-row">
+                    <label>Actual</label>
+                    <div className="bar">
+                      <div className="bar-fill current" style={{width: `${parseFloat(pos.current_allocation) * 100}%`}}></div>
+                    </div>
+                    <span>{formatPercentage(pos.current_allocation)}</span>
+                  </div>
+                  <div className="bar-row">
+                    <label>Target</label>
+                    <div className="bar">
+                      <div className="bar-fill target" style={{width: `${parseFloat(pos.target_allocation) * 100}%`}}></div>
+                    </div>
+                    <span>{formatPercentage(pos.target_allocation)}</span>
+                  </div>
+                </div>
+                {needsRebalance && (
+                  <div className="action-hint">
+                    {drift > 0 ? (
+                      <span className="sell-hint">🔴 Considerar vender</span>
+                    ) : (
+                      <span className="buy-hint">🟢 Considerar comprar</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -197,7 +251,7 @@ function RebalanceView({ goal, onBack, apiHealthy }) {
           <button
             className="primary"
             onClick={handleRebalance}
-            disabled={loading || !apiHealthy}
+            disabled={loading}
           >
             {loading ? 'Calculando...' : 'Calcular Rebalanceo'}
           </button>
@@ -238,39 +292,47 @@ function RebalanceView({ goal, onBack, apiHealthy }) {
             </div>
           </div>
 
-          <div className="trades-list">
-            <h4>Trades Sugeridos</h4>
+          <div className="trades-showcase">
+            <h3>📋 Recomendaciones de Rebalanceo</h3>
+
             {rebalanceResult.trades.length === 0 ? (
-              <p className="text-gray">No se requieren trades</p>
+              <div className="no-trades-card">
+                <div className="success-icon">✅</div>
+                <h4>Portfolio Balanceado</h4>
+                <p>No se requieren trades en este momento</p>
+              </div>
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Ticker</th>
-                    <th>Acción</th>
-                    <th>Shares</th>
-                    <th>Precio</th>
-                    <th>Valor</th>
-                    <th>Razón</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rebalanceResult.trades.map((trade, idx) => (
-                    <tr key={idx}>
-                      <td><strong>{trade.ticker}</strong></td>
-                      <td>
-                        <span className={trade.action === 'BUY' ? 'badge-success' : 'badge-warning'}>
-                          {trade.action}
-                        </span>
-                      </td>
-                      <td>{trade.shares}</td>
-                      <td>{formatCurrency(trade.current_price)}</td>
-                      <td>{formatCurrency(trade.value)}</td>
-                      <td className="text-gray">{trade.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="trades-grid">
+                {rebalanceResult.trades.map((trade, idx) => (
+                  <div key={idx} className={`trade-card trade-${trade.action.toLowerCase()}`}>
+                    <div className="trade-header">
+                      <span className={`action-badge ${trade.action.toLowerCase()}`}>
+                        {trade.action === 'BUY' ? '🟢 COMPRAR' : '🔴 VENDER'}
+                      </span>
+                      <h4>{trade.ticker}</h4>
+                    </div>
+
+                    <div className="trade-details">
+                      <div className="detail-row">
+                        <span>Shares</span>
+                        <strong>{trade.shares}</strong>
+                      </div>
+                      <div className="detail-row">
+                        <span>Precio</span>
+                        <strong>{formatCurrency(trade.current_price)}</strong>
+                      </div>
+                      <div className="detail-row total">
+                        <span>Total</span>
+                        <strong className="highlight">{formatCurrency(trade.value)}</strong>
+                      </div>
+                    </div>
+
+                    <div className="trade-reason">
+                      <small>{trade.reason}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 

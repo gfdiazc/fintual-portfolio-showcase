@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import GoalCard from './components/GoalCard'
 import RebalanceView from './components/RebalanceView'
 import CreateGoalForm from './components/CreateGoalForm'
-import { goalsAPI, healthAPI } from './services/api'
+import { goalsAPI, healthAPI, sampleData } from './services/api'
 import './styles/App.css'
 
 function App() {
@@ -32,6 +32,8 @@ function App() {
     } catch (err) {
       console.warn('API not available, using demo mode');
       setApiHealthy(false);
+      // Load sample data in demo mode
+      setGoals([sampleData.goal]);
       setLoading(false);
     }
   };
@@ -74,15 +76,16 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🚀 Fintual Portfolio Showcase</h1>
-        <p className="subtitle">
-          Sistema avanzado de rebalanceo con CVaR Risk Metrics
-        </p>
-        {!apiHealthy && (
-          <div className="badge badge-warning">
-            ⚠️ Demo Mode - API no disponible
+        <div className="header-content">
+          <div className="brand">
+            <span className="logo-text">fintual</span>
           </div>
-        )}
+          {!apiHealthy && (
+            <div className="badge badge-warning">
+              Demo Mode
+            </div>
+          )}
+        </div>
       </header>
 
       {error && (
